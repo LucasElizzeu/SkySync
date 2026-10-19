@@ -1616,10 +1616,8 @@ window.addEventListener('DOMContentLoaded', async () => {
             // A tabela recebe os dados do banco SEMPRE — inclusive quando
             // vierem vazios. Sem isso ela continuava exibindo os 9 itens
             // fixos do HTML, que e o que dava a impressao de "dados aleatorios".
-            var backupTabela = dadosOperacionais;
-            dadosOperacionais = escalasDoBanco;
-            try { gerarEscalasDinamicas(); }
-            finally { if (escalasDoBanco.length) dadosOperacionais = backupTabela; }
+            window.escalasDoBanco = linhas;
+            gerarDisruptionsDinamicas();
 
             var cap = document.getElementById('historyCaptionText');
             if (cap) {
@@ -2071,9 +2069,9 @@ function registrarNovoHistorico(novoConjunto) {
           var d = r.dados;
           var linhas = (d.alocacoes || []).map(alocacaoParaLinha);
 
-          var backup = dadosOperacionais;
           dadosOperacionais = linhas;
-          try { gerarEscalasDinamicas(); } finally { dadosOperacionais = backup; }
+          gerarEscalasDinamicas();
+          gerarDisruptionsDinamicas();
 
           var mudancas = compararEscalas(escalaAntes, linhas);
 
@@ -2587,6 +2585,8 @@ setInterval(carregarMapaMalha, 300000);  // 5 min: a malha muda pouco
           var dados = await res.json();
           var linhas = (dados.escalas || []).map(window.escalaParaLinha);
           window.escalasDoBanco = linhas;
+          dadosOperacionais = linhas;
+          gerarDisruptionsDinamicas();
 
           if (!linhas.length) {
             // Limpa a tabela: sem isto os 9 itens do localStorage ficam na
@@ -2604,9 +2604,9 @@ setInterval(carregarMapaMalha, 300000);  // 5 min: a malha muda pouco
             return;
           }
 
-          var backup = dadosOperacionais;
           dadosOperacionais = linhas;
-          try { gerarEscalasDinamicas(); } finally { dadosOperacionais = backup; }
+          gerarEscalasDinamicas();
+          gerarDisruptionsDinamicas();
 
           if (aviso && !silencioso) {
             aviso.style.color = 'var(--green)';
