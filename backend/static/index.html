@@ -2468,7 +2468,7 @@ window.addEventListener('DOMContentLoaded', async () => {
       btnSimular.disabled = btnAplicar.disabled = btnDesfazer.disabled = true;
       statusProposta.textContent = aprovar ? 'Aplicando proposta…' : 'Calculando proposta…';
       try {
-        const resposta = await fetch(API_URL + '/escalas/otimizar', {
+        const resposta = await fetch(API_URL + '/escalas/propostas', {
           method: 'POST', credentials: 'include', headers: {'Content-Type': 'application/json'},
           body: JSON.stringify(aprovar ? {gravar: true, proposta_id: propostaId} : {limite_voos: 15})
         });

@@ -245,6 +245,7 @@ def listar_escalas():
 # ---------------------------------------------------------------------------
 # Otimizacao sobre a malha real — roda e GRAVA
 # ---------------------------------------------------------------------------
+@bp.post("/escalas/propostas")
 @bp.post("/escalas/otimizar")
 @login_obrigatorio
 def otimizar_e_gravar():

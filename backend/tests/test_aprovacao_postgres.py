@@ -47,7 +47,7 @@ def test_simular_revalidar_e_aprovar_uma_vez(banco_propostas):
         with app.test_client() as client:
             with client.session_transaction() as sessao:
                 sessao["usuario_id"] = usuario
-            return client.post("/api/escalas/otimizar", json=dados)
+            return client.post("/api/escalas/propostas", json=dados)
 
     proposta = enviar({}).get_json()
     aprovar = {"gravar": True, "proposta_id": proposta["proposta_id"]}
