@@ -678,9 +678,16 @@
       <h2 class="section-sub" id="acoes-h" data-i18n="simulationActionsTitle">Simulação e ações</h2>
       <div class="actions">
         <button class="btn btn-ghost" id="btnSimular" type="button" data-i18n="btnSimulate">Simular replanejamento</button>
-        <button class="btn btn-success" id="btnAplicar" type="button" data-i18n="btnApply">Aplicar escala automática</button>
-        <button class="btn btn-primary" id="btnDesfazer" type="button" disabled data-i18n="btnUndo">Desfazer</button>
+        <button class="btn btn-success" id="btnAplicar" disabled type="button" data-i18n="btnApply">Aprovar e aplicar</button>
+        <button class="btn btn-primary" id="btnDesfazer" type="button" disabled data-i18n="btnUndo">Descartar proposta</button>
         <span class="actions-note" data-i18n="actionsNote">A simulação recalcula jornadas sem alterar a escala publicada.</span>
+      </div>
+      <div id="proposalStatus" role="status" aria-live="polite"></div>
+      <div id="proposalPreview" class="table-wrap" hidden>
+        <table><caption>Proposta para revisão</caption>
+          <thead><tr><th>Voo</th><th>Rota</th><th>Tripulante</th><th>Cargo</th><th>Horas após o voo</th></tr></thead>
+          <tbody></tbody>
+        </table>
       </div>
       <div id="liveStatus" role="status" aria-live="polite"></div>
     </section>
@@ -1094,8 +1101,8 @@ window.addEventListener('DOMContentLoaded', async () => {
         thAiRoute: 'Rota sugerida pela IA',
         simulationActionsTitle: 'Simulação e ações',
         btnSimulate: 'Simular replanejamento',
-        btnApply: 'Aplicar escala automática',
-        btnUndo: 'Desfazer',
+        btnApply: 'Aprovar e aplicar',
+        btnUndo: 'Descartar proposta',
         actionsNote: 'A simulação recalcula jornadas sem alterar a escala publicada.',
         settingsTitle: 'Configurações',
         settingsSubtitle: 'Modifique as informações abaixo. As alterações são aplicadas instantaneamente em todo o painel.',
@@ -1231,8 +1238,8 @@ window.addEventListener('DOMContentLoaded', async () => {
         thAiRoute: 'AI Suggested Route',
         simulationActionsTitle: 'Simulation & Actions',
         btnSimulate: 'Simulate rescheduling',
-        btnApply: 'Apply automatic schedule',
-        btnUndo: 'Undo',
+        btnApply: 'Approve and apply',
+        btnUndo: 'Discard proposal',
         actionsNote: 'Simulation recalculates duties without altering the published schedule.',
         settingsTitle: 'Settings',
         settingsSubtitle: 'Modify information below. Changes apply instantly across the entire panel.',
@@ -1368,8 +1375,8 @@ window.addEventListener('DOMContentLoaded', async () => {
         thAiRoute: 'Ruta sugerida por IA',
         simulationActionsTitle: 'Simulación y acciones',
         btnSimulate: 'Simular reprogramación',
-        btnApply: 'Aplicar escala automática',
-        btnUndo: 'Deshacer',
+        btnApply: 'Aprobar y aplicar',
+        btnUndo: 'Descartar propuesta',
         actionsNote: 'La simulación recalcula jornadas sin alterar a escala publicada.',
         settingsTitle: 'Configuración',
         settingsSubtitle: 'Modifique la información abajo. Los cambios se aplican al instante en todo el panel.',
@@ -1978,152 +1985,6 @@ window.addEventListener('DOMContentLoaded', async () => {
       });
     }
 
-
-
-// TODO(integração): este bloco aplica conformidade localmente, sem chamar o
-    // motor CP-SAT. A próxima etapa é traduzir os itens da tabela para o
-    // formato de /api/otimizacao (horas "11h30" -> 11.5, limitRbac -> limite_horas,
-    // rota "GRU -> VCP" -> origem/destino) e usar a resposta do solver.
-
-    function aplicarEscalaAutomaticaNaVersaoAtual() {
-      dadosOperacionais.forEach(d => {
-        d.bloqueado = false;
-        d.risco = 'baixo';
-        d.badgeKey = 'normalOperation';
-        d.solucao = 'Conformidade ANAC aplicada';
-      });
-
-      historicoEscalas[indiceHistoricoAtual] = JSON.parse(JSON.stringify(dadosOperacionais));
-
-      try {
-        localStorage.setItem('skysync_historico_escalas', JSON.stringify(historicoEscalas));
-        localStorage.setItem('skysync_dados_operacionais', JSON.stringify(dadosOperacionais));
-      } catch(e){}
-
-      gerarDisruptionsDinamicas();
-      gerarEscalasDinamicas();
-
-      showStatus(`Escala automática aplicada com sucesso na Versão ${indiceHistoricoAtual + 1}!`, 'ok');
-      addFeedItem(`Escala automática aplicada na Versão ${indiceHistoricoAtual + 1}: todos os registros conformes.`);
-    }
-
-
-    // ---------------------------------------------------------------------
-    // BOTAO DE OTIMIZACAO — ligado ao motor CP-SAT
-    //
-    // Antes, os dois botoes reescreviam os dados na mao (risco='baixo',
-    // solucao='Conforme ANAC aplicada') sem calcular nada. Agora chamam
-    // /api/escalas/otimizar, que roda o CP-SAT sobre `voos` e `jornadas`.
-    //
-    // Todo o bloco esta em try/catch: uma falha aqui nao derruba a pagina.
-    // ---------------------------------------------------------------------
-    function horasFormatadas(horas) {
-      var totalMin = Math.round((Number(horas) || 0) * 60);
-      return String(Math.floor(totalMin / 60)).padStart(2, '0') + 'h' +
-             String(totalMin % 60).padStart(2, '0');
-    }
-
-    function alocacaoParaLinha(a) {
-      var antes = Number(a.horas_antes) || 0;
-      var limite = Number(a.limite_aplicado) || 11;
-      var depois = antes + (Number(a.duracao_horas) || 0);
-      var ocupacao = limite ? Math.round((depois / limite) * 1000) / 10 : 0;
-      var conforme = depois <= limite;
-      return {
-        tripulante: a.tripulante,
-        cargo: a.cargo,
-        voo: a.voo,
-        horas: a.horas || horasFormatadas(a.duracao_horas),
-        limitRbac: horasFormatadas(limite),
-        bloqueado: !conforme,
-        risco: !conforme ? 'alto' : (ocupacao >= 85 ? 'medio' : 'baixo'),
-        badgeKey: !conforme ? 'highFatigueRisk' : 'normalOperation',
-        rota: a.rota,
-        solucao: a.motivo || (conforme ? 'Alocada pelo motor CP-SAT' : 'Excede o limite'),
-        desc: 'Ocupacao de ' + ocupacao + '% do teto apos a alocacao.'
-      };
-    }
-
-    function executarMotor(gravar) {
-      var aviso = document.getElementById('liveStatus');
-      var btnS = document.getElementById('btnSimular');
-      var btnA = document.getElementById('btnAplicar');
-      var rotuloS = btnS ? btnS.innerText : '';
-      var rotuloA = btnA ? btnA.innerText : '';
-
-      if (btnS) { btnS.disabled = true; btnS.innerText = 'Executando...'; }
-      if (btnA) { btnA.disabled = true; }
-      if (aviso) {
-        aviso.style.color = 'var(--text-600-solid)';
-        aviso.textContent = gravar
-          ? 'Executando o motor e publicando a escala...'
-          : 'Simulando — a escala publicada nao sera alterada.';
-      }
-
-      fetch(API_URL + '/escalas/otimizar', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        credentials: 'include',
-        body: JSON.stringify({ limite_voos: 15, gravar: gravar === true })
-      })
-        .then(function (res) {
-          return res.json().then(function (dados) { return { status: res.status, dados: dados }; });
-        })
-        .then(function (r) {
-          if (r.status === 401) { window.location.href = 'login.html'; return; }
-
-          if (r.status === 409) {
-            var causas = (r.dados.diagnostico && r.dados.diagnostico.causas) || [];
-            if (aviso) {
-              aviso.style.color = 'var(--red)';
-              aviso.textContent = 'Inviavel: ' + causas.join(' ');
-            }
-            addFeedItem('Otimizacao inviavel: ' + causas.join(' '));
-            return;
-          }
-
-          if (r.status !== 200) {
-            if (aviso) {
-              aviso.style.color = 'var(--red)';
-              aviso.textContent = r.dados.mensagem || 'O motor nao convergiu.';
-            }
-            return;
-          }
-
-          var d = r.dados;
-          var linhas = (d.alocacoes || []).map(alocacaoParaLinha);
-
-          var backup = dadosOperacionais;
-          dadosOperacionais = linhas;
-          try { gerarEscalasDinamicas(); } finally { dadosOperacionais = backup; }
-
-          var resumo = d.status + ' · ' + d.total_alocacoes + ' alocacao(oes) · ' +
-                       'conformidade ' + d.conformidade + '% · ' + d.wall_time_seconds + 's';
-
-          if (aviso) {
-            aviso.style.color = gravar ? 'var(--green)' : 'var(--text-600-solid)';
-            aviso.textContent = (gravar ? 'Escala publicada: ' : 'Simulacao (nao publicada): ') + resumo;
-          }
-          addFeedItem((gravar ? 'Escala publicada no banco: ' : 'Simulacao: ') + resumo);
-
-          var eng = document.getElementById('engineLabel');
-          if (eng) eng.textContent = 'Motor CP-SAT — ' + d.status;
-        })
-        .catch(function (err) {
-          console.error('Falha na otimizacao:', err);
-          if (aviso) {
-            aviso.style.color = 'var(--red)';
-            aviso.textContent = 'Nao foi possivel falar com o motor.';
-          }
-        })
-        .finally(function () {
-          if (btnS) { btnS.disabled = false; btnS.innerText = rotuloS; }
-          if (btnA) { btnA.disabled = false; btnA.innerText = rotuloA; }
-        });
-    }
-
-    var rodarMotor = executarMotor;
-
     const nowBase = new Date();
     const feedItemsData = [
       { text: 'Voo GLO-4412 pousou normalmente dentro do horário previsto.', time: new Date(nowBase.getTime() - 12 * 60 * 1000) },
@@ -2581,9 +2442,6 @@ window.addEventListener('DOMContentLoaded', async () => {
     const btnAplicar = document.getElementById('btnAplicar');
     const btnDesfazer = document.getElementById('btnDesfazer');
     const liveStatus = document.getElementById('liveStatus');
-    const engineLabel = document.getElementById('engineLabel');
-    let dadosSnapshotSimulacao = null;
-
     function showStatus(msg, kind) {
       try {
         if (!liveStatus) return;
@@ -2592,39 +2450,64 @@ window.addEventListener('DOMContentLoaded', async () => {
       } catch(e) {}
     }
 
-    if (btnSimular) {
-      btnSimular.addEventListener('click', function () {
-        rodarMotor(false);
-      });
+    const preview = document.getElementById('proposalPreview');
+    const statusProposta = document.getElementById('proposalStatus');
+    let propostaId = null;
+
+    function limparProposta() {
+      propostaId = null;
+      preview.hidden = true;
+      preview.querySelector('tbody').replaceChildren();
+      btnAplicar.disabled = true;
+      btnDesfazer.disabled = true;
     }
 
-    if (btnAplicar) {
-      btnAplicar.addEventListener('click', function () {
-        rodarMotor(true);
-      });
-    }
-
-    if (btnDesfazer) {
-      btnDesfazer.addEventListener('click', () => {
-        if (dadosSnapshotSimulacao) {
-          dadosOperacionais = JSON.parse(JSON.stringify(dadosSnapshotSimulacao));
-          dadosSnapshotSimulacao = null;
-        } else {
-          dadosOperacionais = JSON.parse(JSON.stringify(dadosOriginais));
+    async function processarProposta(aprovar) {
+      if (aprovar && (!propostaId || !window.confirm('Aprovar esta proposta e atualizar as jornadas?'))) return;
+      if (!aprovar) limparProposta();
+      btnSimular.disabled = btnAplicar.disabled = btnDesfazer.disabled = true;
+      statusProposta.textContent = aprovar ? 'Aplicando proposta…' : 'Calculando proposta…';
+      try {
+        const resposta = await fetch(API_URL + '/escalas/otimizar', {
+          method: 'POST', credentials: 'include', headers: {'Content-Type': 'application/json'},
+          body: JSON.stringify(aprovar ? {gravar: true, proposta_id: propostaId} : {limite_voos: 15})
+        });
+        if (resposta.status === 401) { window.location.href = 'login.html'; return; }
+        const dados = await resposta.json();
+        if (!resposta.ok) {
+          if (resposta.status === 409) limparProposta();
+          throw new Error(dados.diagnostico?.causas?.join(' ') || dados.erro || dados.mensagem || 'Falha ao processar a proposta.');
         }
-        try {
-          localStorage.setItem('skysync_dados_operacionais', JSON.stringify(dadosOperacionais));
-        } catch(e){}
-
-        gerarDisruptionsDinamicas();
-        gerarEscalasDinamicas();
-
-        if (engineLabel) engineLabel.textContent = 'Ativo — otimizado com sucesso';
-        showStatus('Simulação desfeita. As disrupções e escalas anteriores foram restauradas.', 'blocked');
-        if (btnDesfazer) btnDesfazer.disabled = true;
-        addFeedItem('Simulação desfeita: estado anterior restaurado.');
-      });
+        if (aprovar) {
+          limparProposta();
+          statusProposta.textContent = 'Escala aprovada. ' + dados.total_alocacoes + ' alocações confirmadas.';
+          await window.carregarEscalasDoBanco(true);
+          return;
+        }
+        const corpo = preview.querySelector('tbody');
+        for (const a of dados.alocacoes) {
+          const linha = corpo.insertRow();
+          for (const valor of [a.voo, a.rota, a.tripulante, a.cargo, (a.horas_antes + a.duracao_horas).toFixed(2)]) {
+            linha.insertCell().textContent = valor;
+          }
+        }
+        propostaId = dados.proposta_id;
+        preview.hidden = false;
+        statusProposta.textContent = 'Revise as ' + dados.total_alocacoes + ' alocações propostas antes de aprovar.';
+      } catch (erro) {
+        statusProposta.textContent = erro.message || 'Falha ao comunicar com o servidor.';
+      } finally {
+        btnSimular.disabled = false;
+        btnAplicar.disabled = btnDesfazer.disabled = !propostaId;
+      }
     }
+
+    btnSimular.addEventListener('click', () => processarProposta(false));
+    btnAplicar.addEventListener('click', () => processarProposta(true));
+    btnDesfazer.addEventListener('click', () => {
+      limparProposta();
+      statusProposta.textContent = 'Proposta descartada.';
+    });
   } catch (err) {
     console.error("Erro geral recuperado no SkySync:", err);
   }
